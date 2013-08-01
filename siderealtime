@@ -1,0 +1,146 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+ 
+# Blog: http://astroman.lamost.org/dbs 
+# By LaoWu (chjwu@bao.ac.cn)
+ 
+import os
+import wx
+import time
+import urllib2, json
+ 
+#   --- Calculate Julian day ---  #
+def TJD():
+    t = time.gmtime()
+    Y = t[0]
+    M = t[1]
+    D = t[2]
+    h = t[3]
+    m = t[4]
+    s = t[5]
+    if M <=2.:
+        Y = Y-1
+        M = M + 12
+    JD = int(365.25*Y)+int(Y/400.)-int(Y/100.)+int(30.59*(M-2))+D+1721088.5+\
+            (h/24.)+(m/1440.)+(s/86400.)
+    return JD-2440000.5
+ 
+#   --- Main ---    #
+class MyClock(wx.Frame):
+    def __init__(self, parent, id, title):
+        wx.Frame.__init__(self, parent, id, title, wx.DefaultPosition, \
+                size=(535,300))
+        obsList = ['XingLong', 'XuYi', 'LiJiang']
+        self.time_diff = {
+                'XingLong' : 117.575, 
+                'XuYi' : 118.543, 
+                'LiJiang' : 100.224
+                }
+ 
+        self.city_diff = {
+                'XingLong': '101090404',
+                'XuYi': '101190903',
+                'LiJiang': '101291401',
+                }
+ 
+        self.timer = wx.Timer(self, 1)
+        self.timer1 = wx.Timer(self, 2)
+ 
+        self.diff = 117.575      
+        self.city = '101090404'
+ 
+        wx.StaticLine(self, -1, (120, 70), (300, 1))
+        wx.StaticLine(self, -1, (120, 180), (300, 1))
+ 
+        self.stim = wx.StaticText(self, -1, 'Sidereal Time of Observatory: ', (132, 40))
+        self.stim.SetForegroundColour('Blue')
+        self.weather = wx.StaticText(self, -1, 'Weather of Observatory: ', (155, 150))
+        self.weather.SetForegroundColour('Blue')
+        self.weather1 = wx.StaticText(self, 3, pos=(120, 210))
+        self.weather2 = wx.StaticText(self, 3, pos=(300, 210))
+ 
+        self.time_zones = wx.ComboBox(self, 11, pos=(80, 87), choices=obsList)
+        self.time_zones.SetSelection(0)
+ 
+        self.time = wx.StaticText(self, -2, pos=(350, 90))
+        self.time.SetForegroundColour('Green')
+ 
+        self.time1 = self.CreateStatusBar(4)
+ 
+        font1 = wx.Font(12, wx.DEFAULT, wx.NORMAL, wx.BOLD, 0)
+        font2 = wx.Font(15, wx.DEFAULT, wx.NORMAL, wx.BOLD, 0)
+ 
+        self.time.SetFont(font2)
+        self.weather1.SetFont(font2)
+        self.weather2.SetFont(font2)
+        self.time1.SetFont(font1)
+        self.stim.SetFont(font1)
+        self.weather.SetFont(font1)
+#   --- Binding Event ---   #
+        self.Bind(wx.EVT_TIMER, self.OnTimer, self.timer)
+        self.Bind(wx.EVT_TIMER, self.LocTimer, self.timer1)
+        self.Bind(wx.EVT_COMBOBOX, self.OnSelect, id=11)
+        self.Bind(wx.EVT_PAINT, self.OnPaint)
+ 
+        self.timer.Start(1000)
+        self.timer1.Start(1000)
+ 
+        self.Center()
+        self.Show(True)
+ 
+    def OnPaint(self, event):
+        dc = wx.PaintDC(self)
+        dc.SetPen(wx.Pen('#4c4c4c',1,wx.SHORT_DASH))
+        dc.SetBrush(wx.Brush('#4c4c4c'))
+        dc.DrawRectangle(345,85,110,33)
+ 
+    def OnClose(self, event):
+        self.Close()
+ 
+    def OnSelect(self, event):
+        item = event.GetSelection()
+        time_zone = self.time_zones.GetString(item)
+        self.diff = self.time_diff[time_zone]
+        self.city = self.city_diff[time_zone]
+ 
+    def OnTimer(self, event):
+        theta_G = 24.*(0.671262+1.0027379094*TJD())
+        theta = theta_G+self.diff/15.-8
+        if theta >= 24:
+            theta1 = theta-24*int(theta/24.)
+        elif theta < 0.:
+            theta1 = theta+24*(int(theta/24.)+1)
+        h = int(theta1)
+        m = int((theta1-h)*60)
+        s = int(((theta1-h)*60-m)*60.) 
+        self.time.SetLabel( str('%02d' % h)+':'+str('%02d' % m)+':'+str('%02d' % s))
+#   --- info of weather ---   #
+        url = "http://www.weather.com.cn/data/cityinfo/" +self.city+ ".html"
+        response = urllib2.urlopen(url, timeout=10)
+        city_dict = response.read()
+ 
+        jsondata = json.JSONDecoder().decode(city_dict)
+ 
+        temp_low = jsondata['weatherinfo']['temp1']
+        temp_high = jsondata['weatherinfo']['temp2']
+        weather = jsondata['weatherinfo']['weather']
+ 
+        self.weather1.SetLabel(weather)
+        self.weather2.SetLabel(temp_low + " ~ " + temp_high)
+ 
+    def LocTimer(self, event):
+        ct = time.gmtime()
+        if int(ct[3])>=16:
+            print_time1 = (ct[0], ct[1], ct[2], ct[3]-16, ct[4], ct[5], ct[6], ct[7], -1)
+        else:
+            print_time1 = (ct[0], ct[1], ct[2], ct[3]+8, ct[4], ct[5], ct[6], ct[7], -1)
+        print_time = (ct[0], ct[1], ct[2], ct[3], ct[4], ct[5], ct[6], ct[7], -1)
+        self.time1.SetStatusText('       UTC: ',0)
+        self.time1.SetStatusText('      BeiJing: ',2)
+        self.time1.SetStatusText(time.strftime("    %H:%M:%S", print_time),1)
+        self.time1.SetStatusText(time.strftime("    %H:%M:%S", print_time1),3)
+ 
+if __name__ == '__main__':
+    app = wx.App()
+    MyClock(None, -1, 'Sidereal Time -- LaoWu')
+    app.MainLoop()
